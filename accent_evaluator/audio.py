@@ -7,7 +7,6 @@ import yt_dlp
 import librosa
 import numpy as np
 import time
-import re
 import requests
 
 from .utils import (
@@ -35,352 +34,116 @@ def _test_youtube_access(request_id: str) -> bool:
 
 def extract_audio_from_video(url: str) -> Tuple[str, str]:
     """
-    Download video from URL and extract audio as a .wav file.
+    Extract audio from a video URL using yt-dlp.
     Returns (audio_file_path, request_id).
     """
     request_id = generate_request_id()
-    logger.info(f"[{request_id}] Starting audio extraction from URL: {url[:50]}...")
-    
-    # Test YouTube accessibility first
-    if 'youtube.com' in url or 'youtu.be' in url:
-        if not _test_youtube_access(request_id):
-            logger.warning(f"[{request_id}] YouTube appears to be blocked or inaccessible")
-    
-    # Validate URL
-    is_valid, error_msg = validate_url(url)
-    if not is_valid:
-        logger.error(f"[{request_id}] Invalid URL: {error_msg}")
-        raise ValueError(error_msg)
+    logger.info(f"[{request_id}] Starting audio extraction from URL: {url}...")
     
     temp_dir = None
-    
-    # Try multiple user agents if the first one fails
-    user_agents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0'
-    ]
-    
-    # For YouTube URLs, try pytube first as it's often more reliable
-    if ('youtube.com' in url or 'youtu.be' in url):
-        try:
-            temp_dir = tempfile.mkdtemp()
-            logger.info(f"[{request_id}] Trying pytube first for YouTube URL...")
-            audio_file = _try_pytube_download(url, temp_dir, request_id)
-            logger.info(f"[{request_id}] Pytube succeeded on first attempt!")
-            return audio_file, request_id
-        except Exception as pytube_error:
-            logger.warning(f"[{request_id}] Pytube first attempt failed: {str(pytube_error)}")
-            if temp_dir and os.path.exists(temp_dir):
-                cleanup_temp_files(temp_dir)
-            # Continue with yt-dlp attempts
-    
-    for attempt, user_agent in enumerate(user_agents, 1):
-        try:
-            temp_dir = tempfile.mkdtemp()
-            logger.debug(f"[{request_id}] Created temp directory: {temp_dir}")
-            
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'wav',
-                }],
-                'quiet': True,
-                'no_warnings': True,
-                # Add user agent to avoid 403 errors
-                'http_headers': {
-                    'User-Agent': user_agent,
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-us,en;q=0.5',
-                    'Accept-Encoding': 'gzip,deflate',
-                    'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1',
-                    'Sec-Fetch-Dest': 'document',
-                    'Sec-Fetch-Mode': 'navigate',
-                    'Sec-Fetch-Site': 'none',
-                    'Sec-Fetch-User': '?1',
-                },
-                # Add retry logic
-                'retries': 5,
-                'fragment_retries': 5,
-                # Add more robust error handling
-                'ignoreerrors': False,
-                'no_check_certificate': True,
-                # Add sleep between requests
-                'sleep_interval': 2,
-                'max_sleep_interval': 10,
-                # Add anti-detection options
-                'nocheckcertificate': True,
-                'prefer_insecure': True,
-                'geo_bypass': True,
-                'geo_bypass_country': 'US',
-                'geo_bypass_ip_block': '1.0.0.1',
-                'age_limit': 0,
-                # Add more extractor options
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android', 'web'],
-                        'player_skip': ['webpage', 'configs'],
-                        'player_params': {
-                            'hl': 'en',
-                            'gl': 'US',
-                        }
-                    }
-                },
-                # Add cookies and session handling
-                'cookiefile': None,
-                'cookiesfrombrowser': None,
-                # Add more aggressive options
-                'socket_timeout': 30,
-                'extractor_retries': 3,
-                'file_access_retries': 3,
-                'retry_sleep': 1,
-            }
-            
-            start_time = time.time()
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                logger.info(f"[{request_id}] Downloading video (attempt {attempt}/{len(user_agents)})...")
-                result = ydl.extract_info(url, download=True)
-                
-                # Handle different return types from extract_info
-                if isinstance(result, tuple):
-                    info, _ = result  # Unpack tuple (info, download_path)
-                else:
-                    info = result  # Direct dictionary
-                
-                # Validate duration
-                duration = info.get('duration', 0)
-                is_valid_duration, duration_error = validate_audio_duration(duration)
-                if not is_valid_duration:
-                    logger.error(f"[{request_id}] Duration validation failed: {duration_error}")
-                    raise ValueError(duration_error)
-                
-                title = sanitize_filename(info.get('title', 'video'))
-                audio_file = os.path.join(temp_dir, f"{title}.wav")
-                
-                if os.path.exists(audio_file):
-                    logger.info(f"[{request_id}] Audio extraction completed in {time.time() - start_time:.2f}s")
-                    return audio_file, request_id
-                
-                # Try to find the wav file
-                for file in os.listdir(temp_dir):
-                    if file.endswith('.wav'):
-                        audio_file = os.path.join(temp_dir, file)
-                        logger.info(f"[{request_id}] Audio extraction completed in {time.time() - start_time:.2f}s")
-                        return audio_file, request_id
-                
-                raise Exception(ERROR_MESSAGES["audio_extraction_failed"])
-                
-        except Exception as e:
-            logger.warning(f"[{request_id}] Attempt {attempt} failed: {str(e)}")
-            # Cleanup temp directory on error
-            if temp_dir and os.path.exists(temp_dir):
-                cleanup_temp_files(temp_dir)
-            
-            # If this was the last attempt, try the fallback method
-            if attempt == len(user_agents):
-                logger.info(f"[{request_id}] Trying fallback method with different URL formats...")
-                try:
-                    temp_dir = tempfile.mkdtemp()
-                    # Only try YouTube formats if it's actually a YouTube URL
-                    if 'youtube.com' in url or 'youtu.be' in url:
-                        try:
-                            # First try pytube as it's more reliable for YouTube
-                            audio_file = _try_pytube_download(url, temp_dir, request_id)
-                            logger.info(f"[{request_id}] Pytube fallback succeeded")
-                            return audio_file, request_id
-                        except Exception as pytube_error:
-                            logger.warning(f"[{request_id}] Pytube failed, trying alternative yt-dlp: {str(pytube_error)}")
-                            try:
-                                # Try alternative yt-dlp configurations
-                                audio_file = _try_alternative_yt_dlp(url, temp_dir, request_id)
-                                logger.info(f"[{request_id}] Alternative yt-dlp succeeded")
-                                return audio_file, request_id
-                            except Exception as alt_error:
-                                logger.warning(f"[{request_id}] Alternative yt-dlp failed, trying yt-dlp formats: {str(alt_error)}")
-                                # If all else fails, try yt-dlp formats
-                                audio_file = _try_different_youtube_formats(url, temp_dir, user_agents[0], request_id)
-                    else:
-                        # For non-YouTube URLs, just try the original URL with simpler options
-                        audio_file = _try_simple_download(url, temp_dir, user_agents[0], request_id)
-                    logger.info(f"[{request_id}] Fallback method succeeded")
-                    return audio_file, request_id
-                except Exception as fallback_error:
-                    logger.error(f"[{request_id}] Fallback method also failed: {str(fallback_error)}")
-                    if temp_dir and os.path.exists(temp_dir):
-                        cleanup_temp_files(temp_dir)
-                    raise Exception(f"Error downloading video after {len(user_agents)} attempts and fallback: {str(e)}")
-            
-            # Wait before next attempt
-            time.sleep(3)
-    
-    # This should never be reached, but just in case
-    raise Exception("Unexpected error in audio extraction")
-
-def _try_simple_download(url: str, temp_dir: str, user_agent: str, request_id: str) -> str:
-    """Try simple download for non-YouTube URLs."""
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'wav',
-        }],
-        'quiet': True,
-        'no_warnings': True,
-        'http_headers': {
-            'User-Agent': user_agent,
-        },
-        'retries': 3,
-        'fragment_retries': 3,
-    }
-    
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        logger.info(f"[{request_id}] Trying simple download: {url}")
-        result = ydl.extract_info(url, download=True)
+    try:
+        temp_dir = tempfile.mkdtemp()
+        logger.debug(f"[{request_id}] Created temp directory: {temp_dir}")
         
-        # Handle different return types from extract_info
-        if isinstance(result, tuple):
-            info, _ = result  # Unpack tuple (info, download_path)
-        else:
-            info = result  # Direct dictionary
+        # Test YouTube accessibility for YouTube URLs
+        if 'youtube.com' in url or 'youtu.be' in url:
+            is_accessible = _test_youtube_access(request_id)
+            if not is_accessible:
+                raise Exception("YouTube is not accessible. Please try file upload instead.")
         
-        # Check for wav file
-        for file in os.listdir(temp_dir):
-            if file.endswith('.wav'):
-                return os.path.join(temp_dir, file)
-    
-    raise Exception("Simple download failed")
-
-def _try_different_youtube_formats(url: str, temp_dir: str, user_agent: str, request_id: str) -> str:
-    """Try different YouTube URL formats if the original fails."""
-    
-    # Extract video ID from URL
-    video_id_match = re.search(r'(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)', url)
-    if not video_id_match:
-        raise Exception("Could not extract video ID from URL")
-    
-    video_id = video_id_match.group(1)
-    
-    # Try different URL formats
-    url_formats = [
-        f"https://www.youtube.com/watch?v={video_id}",
-        f"https://youtu.be/{video_id}",
-        f"https://m.youtube.com/watch?v={video_id}",
-        f"https://www.youtube.com/embed/{video_id}",
-    ]
-    
-    for format_url in url_formats:
-        try:
-            ydl_opts = {
-                'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
-                'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'wav',
-                }],
-                'quiet': True,
-                'no_warnings': True,
-                'http_headers': {
-                    'User-Agent': user_agent,
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-us,en;q=0.5',
-                    'Accept-Encoding': 'gzip,deflate',
-                    'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
-                    'Connection': 'keep-alive',
-                },
-                'retries': 5,
-                'fragment_retries': 5,
-                'nocheckcertificate': True,
-                'prefer_insecure': True,
-                'geo_bypass': True,
-                'geo_bypass_country': 'US',
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android'],
-                        'player_skip': ['webpage', 'configs'],
+        # Single yt-dlp configuration
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'wav',
+            }],
+            'quiet': True,
+            'no_warnings': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-us,en;q=0.5',
+                'Accept-Encoding': 'gzip,deflate',
+                'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+            },
+            'retries': 3,
+            'fragment_retries': 3,
+            'ignoreerrors': False,
+            'no_check_certificate': True,
+            'sleep_interval': 2,
+            'max_sleep_interval': 10,
+            'nocheckcertificate': True,
+            'prefer_insecure': True,
+            'geo_bypass': True,
+            'geo_bypass_country': 'US',
+            'geo_bypass_ip_block': '1.0.0.1',
+            'age_limit': 0,
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'web'],
+                    'player_skip': ['webpage', 'configs'],
+                    'player_params': {
+                        'hl': 'en',
+                        'gl': 'US',
                     }
                 }
-            }
+            },
+            'cookiefile': None,
+            'cookiesfrombrowser': None,
+            'socket_timeout': 30,
+            'extractor_retries': 3,
+            'file_access_retries': 3,
+            'retry_sleep': 1,
+        }
+        
+        start_time = time.time()
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            logger.info(f"[{request_id}] Downloading video with yt-dlp...")
+            result = ydl.extract_info(url, download=True)
             
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                logger.info(f"[{request_id}] Trying format: {format_url}")
-                result = ydl.extract_info(format_url, download=True)
-                
-                # Handle different return types from extract_info
-                if isinstance(result, tuple):
-                    info, _ = result  # Unpack tuple (info, download_path)
-                else:
-                    info = result  # Direct dictionary
-                
-                # Check for wav file
-                for file in os.listdir(temp_dir):
-                    if file.endswith('.wav'):
-                        return os.path.join(temp_dir, file)
-                        
-        except Exception as e:
-            logger.warning(f"[{request_id}] Format {format_url} failed: {str(e)}")
-            continue
-    
-    raise Exception("All YouTube URL formats failed")
-
-def _try_pytube_download(url: str, temp_dir: str, request_id: str) -> str:
-    """Try downloading YouTube videos using pytube as an alternative to yt-dlp."""
-    try:
-        from pytube import YouTube
-        
-        logger.info(f"[{request_id}] Trying pytube download: {url}")
-        
-        # Create YouTube object with better error handling
-        yt = YouTube(url)
-        
-        # Wait a moment for the object to initialize
-        time.sleep(1)
-        
-        # Get the best audio stream
-        audio_streams = yt.streams.filter(only_audio=True)
-        if not audio_streams:
-            raise Exception("No audio streams found")
-        
-        # Get the highest quality audio stream
-        audio_stream = audio_streams.order_by('abr').desc().first()
-        if not audio_stream:
-            audio_stream = audio_streams.first()
-        
-        logger.info(f"[{request_id}] Found audio stream: {audio_stream}")
-        
-        # Download the audio
-        audio_file = audio_stream.download(output_path=temp_dir, filename="audio")
-        
-        # Convert to WAV using FFmpeg
-        wav_file = os.path.join(temp_dir, "audio.wav")
-        import subprocess
-        cmd = [
-            'ffmpeg', '-i', audio_file,
-            '-vn', '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1', '-y', wav_file
-        ]
-        
-        logger.info(f"[{request_id}] Converting audio to WAV...")
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        if result.returncode != 0:
-            raise Exception(f"FFmpeg conversion failed: {result.stderr}")
-        
-        if os.path.exists(wav_file):
-            logger.info(f"[{request_id}] Pytube download succeeded")
-            return wav_file
-        else:
-            raise Exception("WAV file not created")
+            # Handle different return types from extract_info
+            if isinstance(result, tuple):
+                info, _ = result  # Unpack tuple (info, download_path)
+            else:
+                info = result  # Direct dictionary
             
-    except ImportError as e:
-        logger.error(f"[{request_id}] Pytube not installed: {str(e)}")
-        raise Exception("Pytube not available")
+            # Validate duration
+            duration = info.get('duration', 0)
+            is_valid_duration, duration_error = validate_audio_duration(duration)
+            if not is_valid_duration:
+                logger.error(f"[{request_id}] Duration validation failed: {duration_error}")
+                raise ValueError(duration_error)
+            
+            title = sanitize_filename(info.get('title', 'video'))
+            audio_file = os.path.join(temp_dir, f"{title}.wav")
+            
+            if os.path.exists(audio_file):
+                logger.info(f"[{request_id}] Audio extraction completed in {time.time() - start_time:.2f}s")
+                return audio_file, request_id
+            
+            # Try to find the wav file
+            for file in os.listdir(temp_dir):
+                if file.endswith('.wav'):
+                    audio_file = os.path.join(temp_dir, file)
+                    logger.info(f"[{request_id}] Audio extraction completed in {time.time() - start_time:.2f}s")
+                    return audio_file, request_id
+            
+            raise Exception(ERROR_MESSAGES["audio_extraction_failed"])
+            
     except Exception as e:
-        logger.warning(f"[{request_id}] Pytube download failed: {str(e)}")
-        raise Exception(f"Pytube download failed: {str(e)}")
+        logger.error(f"[{request_id}] Audio extraction failed: {str(e)}")
+        # Cleanup temp directory on error
+        if temp_dir and os.path.exists(temp_dir):
+            cleanup_temp_files(temp_dir)
+        raise Exception(f"Error downloading video: {str(e)}")
 
 def extract_audio_features(audio_file: str, request_id: str = None) -> Dict:
     """
@@ -556,73 +319,4 @@ def process_uploaded_file(uploaded_file, request_id: str = None) -> Tuple[str, s
         # Cleanup temp directory on error
         if temp_dir and os.path.exists(temp_dir):
             cleanup_temp_files(temp_dir)
-        raise Exception(f"Error processing uploaded file: {str(e)}")
-
-def _try_alternative_yt_dlp(url: str, temp_dir: str, request_id: str) -> str:
-    """Try alternative yt-dlp configurations that might bypass YouTube blocking."""
-    
-    # Try different configurations
-    configs = [
-        {
-            'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
-            'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'wav'}],
-            'quiet': True,
-            'no_warnings': True,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-            'retries': 3,
-            'fragment_retries': 3,
-            'nocheckcertificate': True,
-            'prefer_insecure': True,
-            'geo_bypass': True,
-            'geo_bypass_country': 'US',
-        },
-        {
-            'format': 'bestaudio/best',
-            'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'wav'}],
-            'quiet': True,
-            'no_warnings': True,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-            'retries': 3,
-            'fragment_retries': 3,
-            'nocheckcertificate': True,
-            'prefer_insecure': True,
-            'geo_bypass': True,
-            'geo_bypass_country': 'US',
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['android'],
-                    'player_skip': ['webpage', 'configs'],
-                }
-            }
-        }
-    ]
-    
-    for i, config in enumerate(configs):
-        try:
-            logger.info(f"[{request_id}] Trying alternative yt-dlp config {i+1}")
-            with yt_dlp.YoutubeDL(config) as ydl:
-                result = ydl.extract_info(url, download=True)
-                
-                # Handle different return types from extract_info
-                if isinstance(result, tuple):
-                    info, _ = result  # Unpack tuple (info, download_path)
-                else:
-                    info = result  # Direct dictionary
-                
-                # Check for wav file
-                for file in os.listdir(temp_dir):
-                    if file.endswith('.wav'):
-                        logger.info(f"[{request_id}] Alternative yt-dlp config {i+1} succeeded")
-                        return os.path.join(temp_dir, file)
-                        
-        except Exception as e:
-            logger.warning(f"[{request_id}] Alternative yt-dlp config {i+1} failed: {str(e)}")
-            continue
-    
-    raise Exception("All alternative yt-dlp configurations failed") 
+        raise Exception(f"Error processing uploaded file: {str(e)}") 
