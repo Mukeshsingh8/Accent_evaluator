@@ -101,79 +101,112 @@ def extract_audio_from_video(url: str) -> Tuple[str, str]:
         }
         
         start_time = time.time()
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            logger.info(f"[{request_id}] Downloading video with yt-dlp...")
-            result = ydl.extract_info(url, download=True)
-            
-            # Handle different return types from extract_info
-            logger.debug(f"[{request_id}] extract_info result type: {type(result)}")
-            if isinstance(result, tuple):
-                logger.debug(f"[{request_id}] extract_info returned tuple with {len(result)} elements")
-                if len(result) == 2:
-                    info, _ = result  # Unpack tuple (info, download_path)
-                elif len(result) == 1:
-                    info = result[0]  # Single element tuple
+        info = None
+        
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                logger.info(f"[{request_id}] Downloading video with yt-dlp...")
+                result = ydl.extract_info(url, download=True)
+                
+                # Handle different return types from extract_info
+                logger.debug(f"[{request_id}] extract_info result type: {type(result)}")
+                if isinstance(result, tuple):
+                    logger.debug(f"[{request_id}] extract_info returned tuple with {len(result)} elements")
+                    if len(result) == 2:
+                        info, _ = result  # Unpack tuple (info, download_path)
+                    elif len(result) == 1:
+                        info = result[0]  # Single element tuple
+                    else:
+                        raise Exception(f"Unexpected tuple length from extract_info: {len(result)}")
                 else:
-                    raise Exception(f"Unexpected tuple length from extract_info: {len(result)}")
+                    info = result  # Direct dictionary
+                
+                logger.debug(f"[{request_id}] Info type: {type(info)}")
+                
+        except ValueError as e:
+            if "not enough values to unpack" in str(e):
+                logger.error(f"[{request_id}] yt-dlp unpacking error - trying simpler approach")
+                # Try with a much simpler configuration
+                simple_ydl_opts = {
+                    'format': 'best',
+                    'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+                    'quiet': True,
+                    'no_warnings': True,
+                }
+                
+                with yt_dlp.YoutubeDL(simple_ydl_opts) as ydl:
+                    logger.info(f"[{request_id}] Retrying with simple yt-dlp config...")
+                    result = ydl.extract_info(url, download=True)
+                    
+                    if isinstance(result, tuple):
+                        if len(result) == 2:
+                            info, _ = result
+                        elif len(result) == 1:
+                            info = result[0]
+                        else:
+                            raise Exception(f"Unexpected tuple length from extract_info: {len(result)}")
+                    else:
+                        info = result
             else:
-                info = result  # Direct dictionary
+                raise e
+        
+        if info is None:
+            raise Exception("Failed to extract video information")
             
-            logger.debug(f"[{request_id}] Info type: {type(info)}")
-            
-            # Validate duration
-            duration = info.get('duration', 0)
-            is_valid_duration, duration_error = validate_audio_duration(duration)
-            if not is_valid_duration:
-                logger.error(f"[{request_id}] Duration validation failed: {duration_error}")
-                raise ValueError(duration_error)
-            
-            # Find the downloaded video file
-            video_file = None
-            for file in os.listdir(temp_dir):
-                if not file.endswith('.wav'):  # Skip any existing wav files
-                    video_file = os.path.join(temp_dir, file)
-                    break
-            
-            if not video_file:
-                raise Exception("No video file found after download")
-            
-            logger.info(f"[{request_id}] Video downloaded: {video_file}")
-            
-            # Extract audio using FFmpeg
-            title = sanitize_filename(info.get('title', 'video'))
-            audio_file = os.path.join(temp_dir, f"{title}.wav")
-            
-            import subprocess
-            cmd = [
-                'ffmpeg', '-i', video_file,
-                '-vn',  # No video
-                '-acodec', 'pcm_s16le',  # PCM 16-bit
-                '-ar', '16000',  # Sample rate
-                '-ac', '1',  # Mono
-                '-y',  # Overwrite output
-                audio_file
-            ]
-            
-            logger.info(f"[{request_id}] Extracting audio with FFmpeg...")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            
-            if result.returncode != 0:
-                logger.error(f"[{request_id}] FFmpeg failed: {result.stderr}")
-                raise Exception(f"Failed to extract audio: {result.stderr}")
-            
-            if os.path.exists(audio_file):
+        # Validate duration
+        duration = info.get('duration', 0)
+        is_valid_duration, duration_error = validate_audio_duration(duration)
+        if not is_valid_duration:
+            logger.error(f"[{request_id}] Duration validation failed: {duration_error}")
+            raise ValueError(duration_error)
+        
+        # Find the downloaded video file
+        video_file = None
+        for file in os.listdir(temp_dir):
+            if not file.endswith('.wav'):  # Skip any existing wav files
+                video_file = os.path.join(temp_dir, file)
+                break
+        
+        if not video_file:
+            raise Exception("No video file found after download")
+        
+        logger.info(f"[{request_id}] Video downloaded: {video_file}")
+        
+        # Extract audio using FFmpeg
+        title = sanitize_filename(info.get('title', 'video'))
+        audio_file = os.path.join(temp_dir, f"{title}.wav")
+        
+        import subprocess
+        cmd = [
+            'ffmpeg', '-i', video_file,
+            '-vn',  # No video
+            '-acodec', 'pcm_s16le',  # PCM 16-bit
+            '-ar', '16000',  # Sample rate
+            '-ac', '1',  # Mono
+            '-y',  # Overwrite output
+            audio_file
+        ]
+        
+        logger.info(f"[{request_id}] Extracting audio with FFmpeg...")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        
+        if result.returncode != 0:
+            logger.error(f"[{request_id}] FFmpeg failed: {result.stderr}")
+            raise Exception(f"Failed to extract audio: {result.stderr}")
+        
+        if os.path.exists(audio_file):
+            logger.info(f"[{request_id}] Audio extraction completed in {time.time() - start_time:.2f}s")
+            return audio_file, request_id
+        
+        # Try to find the wav file if the expected name doesn't exist
+        for file in os.listdir(temp_dir):
+            if file.endswith('.wav'):
+                audio_file = os.path.join(temp_dir, file)
                 logger.info(f"[{request_id}] Audio extraction completed in {time.time() - start_time:.2f}s")
                 return audio_file, request_id
-            
-            # Try to find the wav file if the expected name doesn't exist
-            for file in os.listdir(temp_dir):
-                if file.endswith('.wav'):
-                    audio_file = os.path.join(temp_dir, file)
-                    logger.info(f"[{request_id}] Audio extraction completed in {time.time() - start_time:.2f}s")
-                    return audio_file, request_id
-            
-            raise Exception(ERROR_MESSAGES["audio_extraction_failed"])
-            
+        
+        raise Exception(ERROR_MESSAGES["audio_extraction_failed"])
+        
     except Exception as e:
         logger.error(f"[{request_id}] Audio extraction failed: {str(e)}")
         # Cleanup temp directory on error
