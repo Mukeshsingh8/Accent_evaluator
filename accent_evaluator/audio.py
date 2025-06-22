@@ -297,4 +297,76 @@ def cleanup_audio_file(audio_file: str, request_id: str = None) -> None:
         request_id = generate_request_id()
     
     logger.debug(f"[{request_id}] Cleaning up audio file: {audio_file}")
-    cleanup_temp_files(audio_file) 
+    cleanup_temp_files(audio_file)
+
+def process_uploaded_file(uploaded_file, request_id: str = None) -> Tuple[str, str]:
+    """
+    Process an uploaded video file and extract audio.
+    Returns (audio_file_path, request_id).
+    """
+    if request_id is None:
+        request_id = generate_request_id()
+    
+    logger.info(f"[{request_id}] Processing uploaded file: {uploaded_file.name}")
+    
+    temp_dir = None
+    try:
+        temp_dir = tempfile.mkdtemp()
+        logger.debug(f"[{request_id}] Created temp directory: {temp_dir}")
+        
+        # Save uploaded file to temp directory
+        video_file_path = os.path.join(temp_dir, uploaded_file.name)
+        with open(video_file_path, 'wb') as f:
+            f.write(uploaded_file.getbuffer())
+        
+        logger.info(f"[{request_id}] File saved to: {video_file_path}")
+        
+        # Extract audio using FFmpeg
+        audio_file_path = os.path.join(temp_dir, f"{os.path.splitext(uploaded_file.name)[0]}.wav")
+        
+        import subprocess
+        cmd = [
+            'ffmpeg', '-i', video_file_path,
+            '-vn',  # No video
+            '-acodec', 'pcm_s16le',  # PCM 16-bit
+            '-ar', '16000',  # Sample rate
+            '-ac', '1',  # Mono
+            '-y',  # Overwrite output
+            audio_file_path
+        ]
+        
+        logger.info(f"[{request_id}] Extracting audio with FFmpeg...")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        
+        if result.returncode != 0:
+            logger.error(f"[{request_id}] FFmpeg failed: {result.stderr}")
+            raise Exception(f"Failed to extract audio: {result.stderr}")
+        
+        if not os.path.exists(audio_file_path):
+            raise Exception("Audio file was not created")
+        
+        # Validate audio file
+        try:
+            y, sr = librosa.load(audio_file_path, sr=None)
+            duration = len(y) / sr
+            logger.info(f"[{request_id}] Audio extracted successfully: {duration:.2f}s duration")
+            
+            # Validate duration
+            is_valid_duration, duration_error = validate_audio_duration(duration)
+            if not is_valid_duration:
+                logger.error(f"[{request_id}] Duration validation failed: {duration_error}")
+                raise ValueError(duration_error)
+                
+        except Exception as e:
+            logger.error(f"[{request_id}] Audio validation failed: {str(e)}")
+            raise Exception(f"Invalid audio file: {str(e)}")
+        
+        logger.info(f"[{request_id}] File processing completed successfully")
+        return audio_file_path, request_id
+        
+    except Exception as e:
+        logger.error(f"[{request_id}] File processing failed: {str(e)}")
+        # Cleanup temp directory on error
+        if temp_dir and os.path.exists(temp_dir):
+            cleanup_temp_files(temp_dir)
+        raise Exception(f"Error processing uploaded file: {str(e)}") 

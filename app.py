@@ -1,6 +1,6 @@
 import streamlit as st
 import time
-from accent_evaluator.audio import extract_audio_from_video, extract_audio_features, cleanup_audio_file
+from accent_evaluator.audio import extract_audio_from_video, extract_audio_features, cleanup_audio_file, process_uploaded_file
 from accent_evaluator.transcription import transcribe_audio
 from accent_evaluator.llm import llm_accent_analysis
 from accent_evaluator.utils import setup_logging, get_logger, check_rate_limit, generate_request_id
@@ -200,18 +200,41 @@ def main():
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.markdown("### 📹 Video URL Input")
-        video_url = st.text_input(
-            "Enter video URL (YouTube, Loom, or direct MP4):",
-            placeholder="https://www.youtube.com/watch?v=... or https://www.loom.com/share/..."
-        )
+        st.markdown("### 📹 Video Input")
+        
+        # Create tabs for different input methods
+        tab1, tab2 = st.tabs(["🌐 Video URL", "📁 Upload File"])
+        
+        with tab1:
+            st.markdown("**Enter video URL:**")
+            video_url = st.text_input(
+                "Video URL (YouTube, Loom, or direct MP4):",
+                placeholder="https://www.youtube.com/watch?v=... or https://www.loom.com/share/...",
+                key="url_input"
+            )
+            st.info("💡 **Note:** YouTube downloads may be blocked. Try file upload for better reliability.")
+        
+        with tab2:
+            st.markdown("**Upload video file directly:**")
+            uploaded_file = st.file_uploader(
+                "Choose a video file",
+                type=['mp4', 'avi', 'mov', 'mkv', 'wmv', 'flv', 'webm'],
+                help="Upload video files up to 200MB. Supported formats: MP4, AVI, MOV, MKV, WMV, FLV, WEBM"
+            )
+            if uploaded_file:
+                st.success(f"✅ File uploaded: {uploaded_file.name} ({uploaded_file.size / 1024 / 1024:.1f} MB)")
+                st.info("💡 **Tip:** File upload is more reliable than URL downloads!")
         
         # OpenAI API Key input
         openai_api_key = st.text_input("Enter your OpenAI API key:", type="password", help="Required for GPT-4 accent analysis")
         
+        # Determine input method
+        use_file_upload = uploaded_file is not None
+        use_url = video_url and not use_file_upload
+        
         if st.button("🔍 Analyze Accent", type="primary", use_container_width=True):
-            if not video_url:
-                st.error("Please enter a valid video URL.")
+            if not use_file_upload and not use_url:
+                st.error("Please either enter a video URL or upload a video file.")
                 return
             if not openai_api_key:
                 st.error("Please enter your OpenAI API key.")
@@ -231,8 +254,13 @@ def main():
                 with progress_placeholder.container():
                     create_progress_animation(1)
                 
-                with st.spinner("📥 Downloading video and extracting audio..."):
-                    audio_file, audio_request_id = extract_audio_from_video(video_url)
+                with st.spinner("📥 Processing video and extracting audio..."):
+                    if use_file_upload:
+                        # Handle file upload
+                        audio_file, audio_request_id = process_uploaded_file(uploaded_file, request_id)
+                    else:
+                        # Handle URL download
+                        audio_file, audio_request_id = extract_audio_from_video(video_url)
                 
                 # Step 2: Transcribe audio
                 with progress_placeholder.container():
@@ -370,7 +398,15 @@ def main():
     
     with col2:
         st.markdown("### 🎥 Video Preview")
-        if video_url:
+        
+        if use_file_upload and uploaded_file:
+            # Show file upload info
+            st.success(f"📁 **File Uploaded:** {uploaded_file.name}")
+            st.info(f"📊 **Size:** {uploaded_file.size / 1024 / 1024:.1f} MB")
+            st.info(f"📋 **Type:** {uploaded_file.type}")
+            st.markdown("🎬 **Video preview will be available after processing**")
+            
+        elif video_url:
             try:
                 # Extract video ID for YouTube
                 if "youtube.com" in video_url or "youtu.be" in video_url:
@@ -399,14 +435,23 @@ def main():
             except:
                 st.info("Video preview not available")
         else:
-            st.info("Enter a video URL to see preview")
+            st.info("Enter a video URL or upload a file to see preview")
         
         st.markdown("### 💡 Tips")
         st.markdown("""
+        - **File Upload** is more reliable than URL downloads
         - Use videos with clear English speech
         - Longer videos provide better analysis
         - Avoid videos with background music
         - Ensure good audio quality
+        """)
+        
+        st.markdown("### 🚀 Why File Upload?")
+        st.markdown("""
+        - ✅ **No YouTube restrictions**
+        - ✅ **Faster processing**
+        - ✅ **More reliable**
+        - ✅ **Works with any video format**
         """)
 
 if __name__ == "__main__":
