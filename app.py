@@ -173,6 +173,10 @@ def main():
         <p style="font-size: 1.2rem; color: #666;">
             Analyze English accents in video interviews and audio recordings using advanced AI technology
         </p>
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1rem; border-radius: 10px; margin: 1rem 0;">
+            <h3>🚀 Recommended: File Upload</h3>
+            <p>Upload video/audio files directly for 100% reliable analysis. Works with MP3, MP4, WAV, and more!</p>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -202,13 +206,21 @@ def main():
         - ✅ **Supports MP3, WAV, M4A, etc.**
         """)
         
-        st.markdown("### ⚠️ URL Downloads")
-        st.warning("**🌐 Video URLs**")
+        st.markdown("### 🌐 URL Downloads")
+        st.warning("**Platform Limitations**")
         st.markdown("""
-        - ❌ **YouTube Often Blocked**
-        - ❌ **Rate Limited**
-        - ❌ **Platform Dependent**
-        - ✅ **Loom/Vimeo Usually Work**
+        - ✅ **Loom Videos** - Works perfectly
+        - ✅ **Vimeo Videos** - Usually works
+        - ❌ **YouTube Videos** - Blocked on cloud
+        - ✅ **Direct MP4 Files** - Works great
+        """)
+        
+        st.markdown("### 🏠 Local vs Cloud")
+        st.info("**Why YouTube works locally but not on cloud:**")
+        st.markdown("""
+        - **Local**: Your IP, low volume, natural requests
+        - **Cloud**: Shared IP, high volume, detected as bot
+        - **Solution**: Clone project locally for YouTube support
         """)
         
         st.markdown("### 📊 Statistics")
@@ -256,15 +268,64 @@ def main():
         with tab2:
             st.markdown("**Enter video URL:**")
             video_url = st.text_input(
-                "Video URL (YouTube, Loom, or direct MP4):",
-                placeholder="https://www.youtube.com/watch?v=... or https://www.loom.com/share/...",
+                "Video URL (Loom, Vimeo, or direct MP4):",
+                placeholder="https://www.loom.com/share/... or https://vimeo.com/...",
                 key="url_input"
             )
-            st.warning("⚠️ **Note:** YouTube downloads are often blocked. Use file upload for guaranteed success!")
-            st.info("💡 **Alternative:** Download the video locally, then upload it here.")
+            
+            # YouTube warning
+            if video_url and ('youtube.com' in video_url or 'youtu.be' in video_url):
+                st.error("⚠️ **YouTube URLs are blocked on cloud servers!**")
+                st.markdown("""
+                **Why this happens:**
+                - YouTube blocks cloud server IPs to prevent automated downloads
+                - This affects all video analysis tools, not just ours
+                - Your local environment works because it uses your personal IP
+                
+                **Solutions:**
+                1. **Use File Upload** (Recommended) - Download the video locally, then upload here
+                2. **Clone Project Locally** - Run the app on your computer for YouTube support
+                3. **Try Other Platforms** - Loom, Vimeo, and direct MP4 files work perfectly
+                """)
+            
+            st.info("💡 **For YouTube videos:** Download locally and upload the file for guaranteed success!")
         
-        # OpenAI API Key input
-        openai_api_key = st.text_input("Enter your OpenAI API key:", type="password", help="Required for GPT-4 accent analysis")
+        # OpenAI API Key input with instructions
+        st.markdown("### 🔑 OpenAI API Key")
+        st.markdown("**Required for GPT-4 accent analysis**")
+        
+        # Instructions expander
+        with st.expander("🔍 How to get your OpenAI API key"):
+            st.markdown("""
+            **Step-by-step guide:**
+            
+            1. **Visit OpenAI**: Go to [platform.openai.com](https://platform.openai.com)
+            2. **Sign up/Login**: Create an account or sign in
+            3. **Navigate to API Keys**: Click on "API Keys" in the left sidebar
+            4. **Create New Key**: Click "Create new secret key"
+            5. **Copy the Key**: Copy the generated key (starts with `sk-`)
+            6. **Paste Here**: Paste it in the field below
+            
+            **Security Notes:**
+            - ✅ Your API key is **never stored** on our servers
+            - ✅ It's only used for this analysis session
+            - ✅ We cannot access your OpenAI account
+            - ✅ You can revoke the key anytime from OpenAI dashboard
+            
+            **Cost Information:**
+            - Each analysis costs ~$0.01-0.05 depending on video length
+            - You can set usage limits in your OpenAI dashboard
+            - No charges from this app - only OpenAI charges apply
+            """)
+        
+        openai_api_key = st.text_input(
+            "Enter your OpenAI API key:", 
+            type="password", 
+            help="Required for GPT-4 accent analysis. Your key is never stored and only used for this session."
+        )
+        
+        if not openai_api_key:
+            st.warning("⚠️ **OpenAI API key required** - Click the expander above for instructions")
         
         # Determine input method
         use_file_upload = uploaded_file is not None
@@ -520,6 +581,58 @@ def main():
         - ✅ **Faster processing**
         - ✅ **More reliable**
         - ✅ **Works with any video format**
+        """)
+
+    # Add information about local deployment for YouTube support
+    with col2:
+        st.markdown("### 🏠 Want YouTube Support?")
+        st.markdown("**Clone and run locally:**")
+        
+        with st.expander("📋 Local Setup Instructions"):
+            st.markdown("""
+            **Why YouTube works locally:**
+            - Your personal IP address
+            - Lower request volume
+            - Natural browser-like behavior
+            
+            **Quick Setup:**
+            ```bash
+            # Clone the repository
+            git clone https://github.com/Mukeshsingh8/Accent_evaluator.git
+            cd Accent_evaluator
+            
+            # Install dependencies
+            pip install -r requirements.txt
+            
+            # Install FFmpeg (required)
+            # macOS: brew install ffmpeg
+            # Windows: Download from ffmpeg.org
+            # Linux: sudo apt install ffmpeg
+            
+            # Run the app
+            streamlit run app.py
+            ```
+            
+            **Benefits of Local Setup:**
+            - ✅ **YouTube Support** - Works with all YouTube videos
+            - ✅ **Faster Processing** - No cloud delays
+            - ✅ **Privacy** - Everything runs on your computer
+            - ✅ **No Rate Limits** - Your personal IP
+            """)
+        
+        st.markdown("### 📚 Supported Platforms")
+        st.markdown("""
+        **Cloud Deployment:**
+        - ✅ Loom videos
+        - ✅ Vimeo videos  
+        - ✅ Direct MP4 files
+        - ✅ File uploads
+        - ❌ YouTube videos
+        
+        **Local Deployment:**
+        - ✅ All platforms including YouTube
+        - ✅ No restrictions
+        - ✅ Full functionality
         """)
 
 if __name__ == "__main__":
