@@ -149,6 +149,16 @@ def extract_audio_from_video(url: str) -> Tuple[str, str]:
                         info = result
             else:
                 raise e
+        except Exception as e:
+            error_msg = str(e)
+            if "HTTP Error 403" in error_msg or "Forbidden" in error_msg:
+                raise Exception("YouTube requires authentication. Please use file upload instead of URL.")
+            elif "Sign in to confirm you're not a bot" in error_msg:
+                raise Exception("YouTube requires user authentication. Please use file upload instead of URL.")
+            elif "HTTP Error 429" in error_msg:
+                raise Exception("YouTube rate limit exceeded. Please use file upload instead of URL.")
+            else:
+                raise e
         
         if info is None:
             raise Exception("Failed to extract video information")
