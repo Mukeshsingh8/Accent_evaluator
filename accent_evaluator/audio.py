@@ -68,7 +68,7 @@ def extract_audio_from_video(url: str) -> Tuple[str, str]:
             logger.debug(f"[{request_id}] Created temp directory: {temp_dir}")
             
             ydl_opts = {
-                'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
+                'format': 'bestaudio/best',
                 'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
@@ -79,41 +79,16 @@ def extract_audio_from_video(url: str) -> Tuple[str, str]:
                 # Add user agent to avoid 403 errors
                 'http_headers': {
                     'User-Agent': user_agent,
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-us,en;q=0.5',
-                    'Accept-Encoding': 'gzip,deflate',
-                    'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
-                    'Connection': 'keep-alive',
                 },
                 # Add retry logic
-                'retries': 10,
-                'fragment_retries': 10,
-                # Add cookies file if available
-                'cookiefile': None,
+                'retries': 5,
+                'fragment_retries': 5,
                 # Add more robust error handling
                 'ignoreerrors': False,
                 'no_check_certificate': True,
                 # Add sleep between requests
-                'sleep_interval': 3,
-                'max_sleep_interval': 15,
-                # Add more options for better compatibility
-                'extractor_retries': 5,
-                'socket_timeout': 60,
-                # Add more aggressive options
-                'nocheckcertificate': True,
-                'prefer_insecure': True,
-                'geo_bypass': True,
-                'geo_bypass_country': 'US',
-                'geo_bypass_ip_block': '1.0.0.1',
-                # Add age verification bypass
-                'age_limit': 0,
-                # Add more extractor options
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android'],
-                        'player_skip': ['webpage', 'configs'],
-                    }
-                }
+                'sleep_interval': 2,
+                'max_sleep_interval': 10,
             }
             
             start_time = time.time()
@@ -155,7 +130,12 @@ def extract_audio_from_video(url: str) -> Tuple[str, str]:
                 logger.info(f"[{request_id}] Trying fallback method with different URL formats...")
                 try:
                     temp_dir = tempfile.mkdtemp()
-                    audio_file = _try_different_youtube_formats(url, temp_dir, user_agents[0], request_id)
+                    # Only try YouTube formats if it's actually a YouTube URL
+                    if 'youtube.com' in url or 'youtu.be' in url:
+                        audio_file = _try_different_youtube_formats(url, temp_dir, user_agents[0], request_id)
+                    else:
+                        # For non-YouTube URLs, just try the original URL with simpler options
+                        audio_file = _try_simple_download(url, temp_dir, user_agents[0], request_id)
                     logger.info(f"[{request_id}] Fallback method succeeded")
                     return audio_file, request_id
                 except Exception as fallback_error:
@@ -169,6 +149,35 @@ def extract_audio_from_video(url: str) -> Tuple[str, str]:
     
     # This should never be reached, but just in case
     raise Exception("Unexpected error in audio extraction")
+
+def _try_simple_download(url: str, temp_dir: str, user_agent: str, request_id: str) -> str:
+    """Try simple download for non-YouTube URLs."""
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'wav',
+        }],
+        'quiet': True,
+        'no_warnings': True,
+        'http_headers': {
+            'User-Agent': user_agent,
+        },
+        'retries': 3,
+        'fragment_retries': 3,
+    }
+    
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        logger.info(f"[{request_id}] Trying simple download: {url}")
+        info = ydl.extract_info(url, download=True)
+        
+        # Check for wav file
+        for file in os.listdir(temp_dir):
+            if file.endswith('.wav'):
+                return os.path.join(temp_dir, file)
+    
+    raise Exception("Simple download failed")
 
 def _try_different_youtube_formats(url: str, temp_dir: str, user_agent: str, request_id: str) -> str:
     """Try different YouTube URL formats if the original fails."""
