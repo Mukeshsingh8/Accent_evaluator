@@ -447,7 +447,8 @@ def cleanup_audio_file(audio_file: str, request_id: str = None) -> None:
 
 def process_uploaded_file(uploaded_file, request_id: str = None) -> Tuple[str, str]:
     """
-    Process an uploaded video file and extract audio.
+    Process an uploaded video or audio file and extract audio.
+    Supports video files (MP4, AVI, MOV, etc.) and audio files (MP3, WAV, M4A, etc.).
     Returns (audio_file_path, request_id).
     """
     if request_id is None:
@@ -461,32 +462,72 @@ def process_uploaded_file(uploaded_file, request_id: str = None) -> Tuple[str, s
         logger.debug(f"[{request_id}] Created temp directory: {temp_dir}")
         
         # Save uploaded file to temp directory
-        video_file_path = os.path.join(temp_dir, uploaded_file.name)
-        with open(video_file_path, 'wb') as f:
+        file_path = os.path.join(temp_dir, uploaded_file.name)
+        with open(file_path, 'wb') as f:
             f.write(uploaded_file.getbuffer())
         
-        logger.info(f"[{request_id}] File saved to: {video_file_path}")
+        logger.info(f"[{request_id}] File saved to: {file_path}")
         
-        # Extract audio using FFmpeg
-        audio_file_path = os.path.join(temp_dir, f"{os.path.splitext(uploaded_file.name)[0]}.wav")
+        # Determine file type
+        file_extension = os.path.splitext(uploaded_file.name)[1].lower()
         
-        import subprocess
-        cmd = [
-            'ffmpeg', '-i', video_file_path,
-            '-vn',  # No video
-            '-acodec', 'pcm_s16le',  # PCM 16-bit
-            '-ar', '16000',  # Sample rate
-            '-ac', '1',  # Mono
-            '-y',  # Overwrite output
-            audio_file_path
-        ]
+        # Audio file extensions that can be processed directly
+        audio_extensions = {'.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.wma'}
         
-        logger.info(f"[{request_id}] Extracting audio with FFmpeg...")
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        # Video file extensions that need audio extraction
+        video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v', '.3gp'}
         
-        if result.returncode != 0:
-            logger.error(f"[{request_id}] FFmpeg failed: {result.stderr}")
-            raise Exception(f"Failed to extract audio: {result.stderr}")
+        if file_extension in audio_extensions:
+            # Audio file - process directly
+            logger.info(f"[{request_id}] Processing audio file directly: {file_extension}")
+            audio_file_path = file_path
+            
+            # For non-WAV audio files, convert to WAV for consistency
+            if file_extension != '.wav':
+                wav_file_path = os.path.join(temp_dir, f"{os.path.splitext(uploaded_file.name)[0]}.wav")
+                import subprocess
+                cmd = [
+                    'ffmpeg', '-i', file_path,
+                    '-acodec', 'pcm_s16le',  # PCM 16-bit
+                    '-ar', '16000',  # Sample rate
+                    '-ac', '1',  # Mono
+                    '-y',  # Overwrite output
+                    wav_file_path
+                ]
+                
+                logger.info(f"[{request_id}] Converting audio to WAV format...")
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                
+                if result.returncode != 0:
+                    logger.error(f"[{request_id}] FFmpeg conversion failed: {result.stderr}")
+                    raise Exception(f"Failed to convert audio: {result.stderr}")
+                
+                audio_file_path = wav_file_path
+                
+        elif file_extension in video_extensions:
+            # Video file - extract audio
+            logger.info(f"[{request_id}] Extracting audio from video file: {file_extension}")
+            audio_file_path = os.path.join(temp_dir, f"{os.path.splitext(uploaded_file.name)[0]}.wav")
+            
+            import subprocess
+            cmd = [
+                'ffmpeg', '-i', file_path,
+                '-vn',  # No video
+                '-acodec', 'pcm_s16le',  # PCM 16-bit
+                '-ar', '16000',  # Sample rate
+                '-ac', '1',  # Mono
+                '-y',  # Overwrite output
+                audio_file_path
+            ]
+            
+            logger.info(f"[{request_id}] Extracting audio with FFmpeg...")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            
+            if result.returncode != 0:
+                logger.error(f"[{request_id}] FFmpeg failed: {result.stderr}")
+                raise Exception(f"Failed to extract audio: {result.stderr}")
+        else:
+            raise Exception(f"Unsupported file type: {file_extension}. Supported formats: {', '.join(audio_extensions | video_extensions)}")
         
         if not os.path.exists(audio_file_path):
             raise Exception("Audio file was not created")
@@ -495,7 +536,7 @@ def process_uploaded_file(uploaded_file, request_id: str = None) -> Tuple[str, s
         try:
             y, sr = librosa.load(audio_file_path, sr=None)
             duration = len(y) / sr
-            logger.info(f"[{request_id}] Audio extracted successfully: {duration:.2f}s duration")
+            logger.info(f"[{request_id}] Audio processed successfully: {duration:.2f}s duration")
             
             # Validate duration
             is_valid_duration, duration_error = validate_audio_duration(duration)

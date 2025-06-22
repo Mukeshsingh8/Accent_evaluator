@@ -1,5 +1,6 @@
 import streamlit as st
 import time
+import os
 from accent_evaluator.audio import extract_audio_from_video, extract_audio_features, cleanup_audio_file, process_uploaded_file
 from accent_evaluator.transcription import transcribe_audio
 from accent_evaluator.llm import llm_accent_analysis
@@ -170,7 +171,7 @@ def main():
     st.markdown("""
     <div style="text-align: center; margin-bottom: 2rem;">
         <p style="font-size: 1.2rem; color: #666;">
-            Analyze English accents in video interviews using advanced AI technology
+            Analyze English accents in video interviews and audio recordings using advanced AI technology
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -197,7 +198,8 @@ def main():
         - ✅ **100% Reliable**
         - ✅ **No Platform Restrictions**
         - ✅ **Faster Processing**
-        - ✅ **Works with Any Video**
+        - ✅ **Works with Any Video/Audio**
+        - ✅ **Supports MP3, WAV, M4A, etc.**
         """)
         
         st.markdown("### ⚠️ URL Downloads")
@@ -224,14 +226,31 @@ def main():
         tab1, tab2 = st.tabs(["📁 Upload File (Recommended)", "🌐 Video URL"])
         
         with tab1:
-            st.markdown("**Upload video file directly:**")
+            st.markdown("**Upload video or audio file directly:**")
             uploaded_file = st.file_uploader(
-                "Choose a video file",
-                type=['mp4', 'avi', 'mov', 'mkv', 'wmv', 'flv', 'webm'],
-                help="Upload video files up to 200MB. Supported formats: MP4, AVI, MOV, MKV, WMV, FLV, WEBM"
+                "Choose a video or audio file",
+                type=['mp4', 'avi', 'mov', 'mkv', 'wmv', 'flv', 'webm', 'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'],
+                help="Upload video or audio files up to 200MB. Supported formats: MP4, AVI, MOV, MKV, WMV, FLV, WEBM, MP3, WAV, M4A, AAC, FLAC, OGG"
             )
             if uploaded_file:
-                st.success(f"✅ File uploaded: {uploaded_file.name} ({uploaded_file.size / 1024 / 1024:.1f} MB)")
+                file_size_mb = uploaded_file.size / 1024 / 1024
+                file_extension = os.path.splitext(uploaded_file.name)[1].lower()
+                
+                # Determine file type for display
+                video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm'}
+                audio_extensions = {'.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'}
+                
+                if file_extension in video_extensions:
+                    file_type = "video"
+                    icon = "🎥"
+                elif file_extension in audio_extensions:
+                    file_type = "audio"
+                    icon = "🎵"
+                else:
+                    file_type = "file"
+                    icon = "📁"
+                
+                st.success(f"✅ {icon} {file_type.title()} file uploaded: {uploaded_file.name} ({file_size_mb:.1f} MB)")
                 st.info("💡 **Tip:** File upload is 100% reliable and bypasses all platform restrictions!")
         
         with tab2:
