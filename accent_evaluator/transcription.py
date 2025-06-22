@@ -34,12 +34,12 @@ def transcribe_audio(audio_file: str, request_id: str = None) -> str:
         model = get_model()
         
         logger.debug(f"[{request_id}] Transcribing audio file: {audio_file}")
-        # The transcribe method returns a generator of segments
-        segments_generator = model.transcribe(audio_file, beam_size=5)
+        # The transcribe method returns a tuple (segments, info)
+        segments, info = model.transcribe(audio_file, beam_size=5)
         
         # Convert generator to list and extract text
-        segments = list(segments_generator)
-        transcription = " ".join([segment.text for segment in segments]).strip()
+        segments_list = list(segments)
+        transcription = " ".join([segment.text for segment in segments_list]).strip()
         
         # Validate transcription
         if not transcription:
@@ -67,18 +67,11 @@ def get_transcription_language(audio_file: str, request_id: str = None) -> str:
     
     try:
         model = get_model()
-        # The transcribe method returns a generator of segments
-        segments_generator = model.transcribe(audio_file, beam_size=5)
+        # The transcribe method returns a tuple (segments, info)
+        segments, info = model.transcribe(audio_file, beam_size=5)
         
-        # Convert generator to list and get language from first segment
-        segments = list(segments_generator)
-        language = "unknown"
-        
-        if segments:
-            # Get language from the first segment
-            first_segment = segments[0]
-            if hasattr(first_segment, 'language') and first_segment.language:
-                language = first_segment.language
+        # Get language from info object
+        language = info.language if hasattr(info, 'language') and info.language else "unknown"
         
         logger.info(f"[{request_id}] Detected language: {language}")
         return language
