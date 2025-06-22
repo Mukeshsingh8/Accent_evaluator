@@ -93,6 +93,16 @@ def extract_audio_from_video(url: str) -> Tuple[str, str]:
                 # Add user agent to avoid 403 errors
                 'http_headers': {
                     'User-Agent': user_agent,
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-us,en;q=0.5',
+                    'Accept-Encoding': 'gzip,deflate',
+                    'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
                 },
                 # Add retry logic
                 'retries': 5,
@@ -103,6 +113,34 @@ def extract_audio_from_video(url: str) -> Tuple[str, str]:
                 # Add sleep between requests
                 'sleep_interval': 2,
                 'max_sleep_interval': 10,
+                # Add anti-detection options
+                'nocheckcertificate': True,
+                'prefer_insecure': True,
+                'geo_bypass': True,
+                'geo_bypass_country': 'US',
+                'geo_bypass_ip_block': '1.0.0.1',
+                'age_limit': 0,
+                # Add more extractor options
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'web'],
+                        'player_skip': ['webpage', 'configs'],
+                        'player_params': {
+                            'hl': 'en',
+                            'gl': 'US',
+                        }
+                    }
+                },
+                # Add cookies and session handling
+                'cookiefile': None,
+                'cookiesfrombrowser': None,
+                # Add more aggressive options
+                'socket_timeout': 30,
+                'extractor_retries': 3,
+                'file_access_retries': 3,
+                'fragment_retries': 3,
+                'retry_sleep': 1,
+                'max_sleep_interval': 5,
             }
             
             start_time = time.time()
@@ -152,9 +190,16 @@ def extract_audio_from_video(url: str) -> Tuple[str, str]:
                             logger.info(f"[{request_id}] Pytube fallback succeeded")
                             return audio_file, request_id
                         except Exception as pytube_error:
-                            logger.warning(f"[{request_id}] Pytube failed, trying yt-dlp formats: {str(pytube_error)}")
-                            # If pytube fails, try yt-dlp formats
-                            audio_file = _try_different_youtube_formats(url, temp_dir, user_agents[0], request_id)
+                            logger.warning(f"[{request_id}] Pytube failed, trying alternative yt-dlp: {str(pytube_error)}")
+                            try:
+                                # Try alternative yt-dlp configurations
+                                audio_file = _try_alternative_yt_dlp(url, temp_dir, request_id)
+                                logger.info(f"[{request_id}] Alternative yt-dlp succeeded")
+                                return audio_file, request_id
+                            except Exception as alt_error:
+                                logger.warning(f"[{request_id}] Alternative yt-dlp failed, trying yt-dlp formats: {str(alt_error)}")
+                                # If all else fails, try yt-dlp formats
+                                audio_file = _try_different_youtube_formats(url, temp_dir, user_agents[0], request_id)
                     else:
                         # For non-YouTube URLs, just try the original URL with simpler options
                         audio_file = _try_simple_download(url, temp_dir, user_agents[0], request_id)
@@ -454,4 +499,67 @@ def process_uploaded_file(uploaded_file, request_id: str = None) -> Tuple[str, s
         # Cleanup temp directory on error
         if temp_dir and os.path.exists(temp_dir):
             cleanup_temp_files(temp_dir)
-        raise Exception(f"Error processing uploaded file: {str(e)}") 
+        raise Exception(f"Error processing uploaded file: {str(e)}")
+
+def _try_alternative_yt_dlp(url: str, temp_dir: str, request_id: str) -> str:
+    """Try alternative yt-dlp configurations that might bypass YouTube blocking."""
+    
+    # Try different configurations
+    configs = [
+        {
+            'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
+            'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'wav'}],
+            'quiet': True,
+            'no_warnings': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
+            'retries': 3,
+            'fragment_retries': 3,
+            'nocheckcertificate': True,
+            'prefer_insecure': True,
+            'geo_bypass': True,
+            'geo_bypass_country': 'US',
+        },
+        {
+            'format': 'bestaudio/best',
+            'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'wav'}],
+            'quiet': True,
+            'no_warnings': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
+            'retries': 3,
+            'fragment_retries': 3,
+            'nocheckcertificate': True,
+            'prefer_insecure': True,
+            'geo_bypass': True,
+            'geo_bypass_country': 'US',
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android'],
+                    'player_skip': ['webpage', 'configs'],
+                }
+            }
+        }
+    ]
+    
+    for i, config in enumerate(configs):
+        try:
+            logger.info(f"[{request_id}] Trying alternative yt-dlp config {i+1}")
+            with yt_dlp.YoutubeDL(config) as ydl:
+                info = ydl.extract_info(url, download=True)
+                
+                # Check for wav file
+                for file in os.listdir(temp_dir):
+                    if file.endswith('.wav'):
+                        logger.info(f"[{request_id}] Alternative yt-dlp config {i+1} succeeded")
+                        return os.path.join(temp_dir, file)
+                        
+        except Exception as e:
+            logger.warning(f"[{request_id}] Alternative yt-dlp config {i+1} failed: {str(e)}")
+            continue
+    
+    raise Exception("All alternative yt-dlp configurations failed") 
