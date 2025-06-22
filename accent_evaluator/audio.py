@@ -132,7 +132,15 @@ def extract_audio_from_video(url: str) -> Tuple[str, str]:
                     temp_dir = tempfile.mkdtemp()
                     # Only try YouTube formats if it's actually a YouTube URL
                     if 'youtube.com' in url or 'youtu.be' in url:
-                        audio_file = _try_different_youtube_formats(url, temp_dir, user_agents[0], request_id)
+                        try:
+                            # First try pytube as it's more reliable for YouTube
+                            audio_file = _try_pytube_download(url, temp_dir, request_id)
+                            logger.info(f"[{request_id}] Pytube fallback succeeded")
+                            return audio_file, request_id
+                        except Exception as pytube_error:
+                            logger.warning(f"[{request_id}] Pytube failed, trying yt-dlp formats: {str(pytube_error)}")
+                            # If pytube fails, try yt-dlp formats
+                            audio_file = _try_different_youtube_formats(url, temp_dir, user_agents[0], request_id)
                     else:
                         # For non-YouTube URLs, just try the original URL with simpler options
                         audio_file = _try_simple_download(url, temp_dir, user_agents[0], request_id)
@@ -244,6 +252,44 @@ def _try_different_youtube_formats(url: str, temp_dir: str, user_agent: str, req
             continue
     
     raise Exception("All YouTube URL formats failed")
+
+def _try_pytube_download(url: str, temp_dir: str, request_id: str) -> str:
+    """Try downloading YouTube videos using pytube as an alternative to yt-dlp."""
+    try:
+        from pytube import YouTube
+        
+        logger.info(f"[{request_id}] Trying pytube download: {url}")
+        yt = YouTube(url)
+        
+        # Get the best audio stream
+        audio_stream = yt.streams.filter(only_audio=True).first()
+        if not audio_stream:
+            raise Exception("No audio stream found")
+        
+        # Download the audio
+        audio_file = audio_stream.download(output_path=temp_dir, filename="audio")
+        
+        # Convert to WAV using FFmpeg
+        wav_file = os.path.join(temp_dir, "audio.wav")
+        import subprocess
+        cmd = [
+            'ffmpeg', '-i', audio_file,
+            '-vn', '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1', '-y', wav_file
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            raise Exception(f"FFmpeg conversion failed: {result.stderr}")
+        
+        if os.path.exists(wav_file):
+            logger.info(f"[{request_id}] Pytube download succeeded")
+            return wav_file
+        else:
+            raise Exception("WAV file not created")
+            
+    except Exception as e:
+        logger.warning(f"[{request_id}] Pytube download failed: {str(e)}")
+        raise Exception(f"Pytube download failed: {str(e)}")
 
 def extract_audio_features(audio_file: str, request_id: str = None) -> Dict:
     """
