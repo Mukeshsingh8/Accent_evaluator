@@ -144,7 +144,13 @@ def extract_audio_from_video(url: str) -> Tuple[str, str]:
             start_time = time.time()
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 logger.info(f"[{request_id}] Downloading video (attempt {attempt}/{len(user_agents)})...")
-                info = ydl.extract_info(url, download=True)
+                result = ydl.extract_info(url, download=True)
+                
+                # Handle different return types from extract_info
+                if isinstance(result, tuple):
+                    info, _ = result  # Unpack tuple (info, download_path)
+                else:
+                    info = result  # Direct dictionary
                 
                 # Validate duration
                 duration = info.get('duration', 0)
@@ -235,7 +241,13 @@ def _try_simple_download(url: str, temp_dir: str, user_agent: str, request_id: s
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         logger.info(f"[{request_id}] Trying simple download: {url}")
-        info = ydl.extract_info(url, download=True)
+        result = ydl.extract_info(url, download=True)
+        
+        # Handle different return types from extract_info
+        if isinstance(result, tuple):
+            info, _ = result  # Unpack tuple (info, download_path)
+        else:
+            info = result  # Direct dictionary
         
         # Check for wav file
         for file in os.listdir(temp_dir):
@@ -297,7 +309,13 @@ def _try_different_youtube_formats(url: str, temp_dir: str, user_agent: str, req
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 logger.info(f"[{request_id}] Trying format: {format_url}")
-                info = ydl.extract_info(format_url, download=True)
+                result = ydl.extract_info(format_url, download=True)
+                
+                # Handle different return types from extract_info
+                if isinstance(result, tuple):
+                    info, _ = result  # Unpack tuple (info, download_path)
+                else:
+                    info = result  # Direct dictionary
                 
                 # Check for wav file
                 for file in os.listdir(temp_dir):
@@ -548,7 +566,13 @@ def _try_alternative_yt_dlp(url: str, temp_dir: str, request_id: str) -> str:
         try:
             logger.info(f"[{request_id}] Trying alternative yt-dlp config {i+1}")
             with yt_dlp.YoutubeDL(config) as ydl:
-                info = ydl.extract_info(url, download=True)
+                result = ydl.extract_info(url, download=True)
+                
+                # Handle different return types from extract_info
+                if isinstance(result, tuple):
+                    info, _ = result  # Unpack tuple (info, download_path)
+                else:
+                    info = result  # Direct dictionary
                 
                 # Check for wav file
                 for file in os.listdir(temp_dir):
