@@ -1,6 +1,6 @@
-"""Transcription logic using Whisper."""
+"""Transcription logic using Faster Whisper."""
 from typing import Optional
-import whisper
+from faster_whisper import WhisperModel
 import time
 
 from .utils import get_logger, generate_request_id
@@ -8,21 +8,21 @@ from .config import WHISPER_MODEL, ERROR_MESSAGES
 
 logger = get_logger("transcription")
 
-_model: Optional[whisper.Whisper] = None
+_model: Optional[WhisperModel] = None
 
-def get_model() -> whisper.Whisper:
+def get_model() -> WhisperModel:
     """Get or load Whisper model with singleton pattern."""
     global _model
     if _model is None:
         logger.info(f"Loading Whisper model: {WHISPER_MODEL}")
         start_time = time.time()
-        _model = whisper.load_model(WHISPER_MODEL)
+        _model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
         logger.info(f"Whisper model loaded in {time.time() - start_time:.2f}s")
     return _model
 
 def transcribe_audio(audio_file: str, request_id: str = None) -> str:
     """
-    Transcribe audio using Whisper. Returns the transcription text.
+    Transcribe audio using Faster Whisper. Returns the transcription text.
     """
     if request_id is None:
         request_id = generate_request_id()
@@ -34,8 +34,10 @@ def transcribe_audio(audio_file: str, request_id: str = None) -> str:
         model = get_model()
         
         logger.debug(f"[{request_id}] Transcribing audio file: {audio_file}")
-        result = model.transcribe(audio_file)
-        transcription = result["text"].strip()
+        segments, info = model.transcribe(audio_file, beam_size=5)
+        
+        # Combine all segments into one transcription
+        transcription = " ".join([segment.text for segment in segments]).strip()
         
         # Validate transcription
         if not transcription:
@@ -53,7 +55,7 @@ def transcribe_audio(audio_file: str, request_id: str = None) -> str:
 
 def get_transcription_language(audio_file: str, request_id: str = None) -> str:
     """
-    Detect the language of the audio using Whisper.
+    Detect the language of the audio using Faster Whisper.
     Returns language code (e.g., 'en', 'es', 'fr').
     """
     if request_id is None:
@@ -63,8 +65,8 @@ def get_transcription_language(audio_file: str, request_id: str = None) -> str:
     
     try:
         model = get_model()
-        result = model.transcribe(audio_file, task="transcribe")
-        language = result.get("language", "unknown")
+        segments, info = model.transcribe(audio_file, beam_size=5)
+        language = info.language if hasattr(info, 'language') else "unknown"
         
         logger.info(f"[{request_id}] Detected language: {language}")
         return language
