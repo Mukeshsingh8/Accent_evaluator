@@ -138,9 +138,7 @@ def extract_audio_from_video(url: str) -> Tuple[str, str]:
                 'socket_timeout': 30,
                 'extractor_retries': 3,
                 'file_access_retries': 3,
-                'fragment_retries': 3,
                 'retry_sleep': 1,
-                'max_sleep_interval': 5,
             }
             
             start_time = time.time()

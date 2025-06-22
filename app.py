@@ -387,25 +387,47 @@ def main():
                 progress_placeholder.empty()
                 
                 st.error(f"❌ Error during analysis: {error_msg}")
-                st.markdown(f"""
-                <div class="error-box">
-                    <strong>🚨 YouTube Download Blocked!</strong><br>
-                    YouTube is blocking downloads from cloud servers. Here's how to fix it:<br><br>
-                    
-                    <strong>✅ Recommended Solution:</strong><br>
-                    1. Download the video to your computer (using browser or YouTube app)<br>
-                    2. Go to the <strong>"📁 Upload File"</strong> tab above<br>
-                    3. Upload the video file directly<br>
-                    4. Get instant analysis without any restrictions!<br><br>
-                    
-                    <strong>Why this happens:</strong><br>
-                    • YouTube blocks automated downloads from cloud servers<br>
-                    • This is a common issue with all video analysis tools<br>
-                    • File upload bypasses all platform restrictions<br><br>
-                    
-                    <strong>Request ID:</strong> {request_id}
-                </div>
-                """, unsafe_allow_html=True)
+                
+                # Check if it's a YouTube authentication error
+                if "Sign in to confirm you're not a bot" in error_msg or "HTTP Error 403" in error_msg or "HTTP Error 429" in error_msg:
+                    st.markdown(f"""
+                    <div class="error-box">
+                        <strong>🚨 YouTube Requires Authentication!</strong><br>
+                        YouTube now requires users to sign in to access videos. This is a new security measure.<br><br>
+                        
+                        <strong>✅ Solution: Use File Upload</strong><br>
+                        1. Download the video to your computer (using browser or YouTube app)<br>
+                        2. Go to the <strong>"📁 Upload File"</strong> tab above<br>
+                        3. Upload the video file directly<br>
+                        4. Get instant analysis without any restrictions!<br><br>
+                        
+                        <strong>Why this happens:</strong><br>
+                        • YouTube now requires authentication for all video access<br>
+                        • This affects all video analysis tools, not just ours<br>
+                        • File upload completely bypasses this restriction<br><br>
+                        
+                        <strong>Alternative platforms that still work:</strong><br>
+                        • ✅ Loom videos (as you've seen)<br>
+                        • ✅ Vimeo videos<br>
+                        • ✅ Direct MP4 files<br>
+                        • ✅ Any uploaded video file<br><br>
+                        
+                        <strong>Request ID:</strong> {request_id}
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div class="error-box">
+                        <strong>Troubleshooting:</strong><br>
+                        • Check that the URL is valid and accessible<br>
+                        • Ensure the video contains clear English speech<br>
+                        • Verify your OpenAI API key<br>
+                        • Try a different video or shorter clip<br>
+                        • Use file upload for guaranteed success<br><br>
+                        
+                        <strong>Request ID:</strong> {request_id}
+                    </div>
+                    """, unsafe_allow_html=True)
                 
                 # Reset button on error - make it more prominent
                 st.markdown("---")
