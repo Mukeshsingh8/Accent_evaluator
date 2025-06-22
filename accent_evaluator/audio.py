@@ -110,10 +110,19 @@ def extract_audio_from_video(url: str) -> Tuple[str, str]:
             result = ydl.extract_info(url, download=True)
             
             # Handle different return types from extract_info
+            logger.debug(f"[{request_id}] extract_info result type: {type(result)}")
             if isinstance(result, tuple):
-                info, _ = result  # Unpack tuple (info, download_path)
+                logger.debug(f"[{request_id}] extract_info returned tuple with {len(result)} elements")
+                if len(result) == 2:
+                    info, _ = result  # Unpack tuple (info, download_path)
+                elif len(result) == 1:
+                    info = result[0]  # Single element tuple
+                else:
+                    raise Exception(f"Unexpected tuple length from extract_info: {len(result)}")
             else:
                 info = result  # Direct dictionary
+            
+            logger.debug(f"[{request_id}] Info type: {type(info)}")
             
             # Validate duration
             duration = info.get('duration', 0)
