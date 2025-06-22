@@ -34,9 +34,11 @@ def transcribe_audio(audio_file: str, request_id: str = None) -> str:
         model = get_model()
         
         logger.debug(f"[{request_id}] Transcribing audio file: {audio_file}")
-        segments = model.transcribe(audio_file, beam_size=5)
+        # The transcribe method returns a generator of segments
+        segments_generator = model.transcribe(audio_file, beam_size=5)
         
-        # Combine all segments into one transcription
+        # Convert generator to list and extract text
+        segments = list(segments_generator)
         transcription = " ".join([segment.text for segment in segments]).strip()
         
         # Validate transcription
@@ -65,14 +67,18 @@ def get_transcription_language(audio_file: str, request_id: str = None) -> str:
     
     try:
         model = get_model()
-        segments = model.transcribe(audio_file, beam_size=5)
+        # The transcribe method returns a generator of segments
+        segments_generator = model.transcribe(audio_file, beam_size=5)
         
-        # Get language from the first segment or use a default
+        # Convert generator to list and get language from first segment
+        segments = list(segments_generator)
         language = "unknown"
-        for segment in segments:
-            if hasattr(segment, 'language') and segment.language:
-                language = segment.language
-                break
+        
+        if segments:
+            # Get language from the first segment
+            first_segment = segments[0]
+            if hasattr(first_segment, 'language') and first_segment.language:
+                language = first_segment.language
         
         logger.info(f"[{request_id}] Detected language: {language}")
         return language
