@@ -191,6 +191,24 @@ def main():
         st.markdown("**Analysis Method:** OpenAI GPT-4")
         st.info("Using advanced AI for accurate accent detection")
         
+        st.markdown("### 🚀 Recommended Method")
+        st.success("**📁 File Upload**")
+        st.markdown("""
+        - ✅ **100% Reliable**
+        - ✅ **No Platform Restrictions**
+        - ✅ **Faster Processing**
+        - ✅ **Works with Any Video**
+        """)
+        
+        st.markdown("### ⚠️ URL Downloads")
+        st.warning("**🌐 Video URLs**")
+        st.markdown("""
+        - ❌ **YouTube Often Blocked**
+        - ❌ **Rate Limited**
+        - ❌ **Platform Dependent**
+        - ✅ **Loom/Vimeo Usually Work**
+        """)
+        
         st.markdown("### 📊 Statistics")
         if 'total_analyses' not in st.session_state:
             st.session_state.total_analyses = 0
@@ -203,18 +221,9 @@ def main():
         st.markdown("### 📹 Video Input")
         
         # Create tabs for different input methods
-        tab1, tab2 = st.tabs(["🌐 Video URL", "📁 Upload File"])
+        tab1, tab2 = st.tabs(["📁 Upload File (Recommended)", "🌐 Video URL"])
         
         with tab1:
-            st.markdown("**Enter video URL:**")
-            video_url = st.text_input(
-                "Video URL (YouTube, Loom, or direct MP4):",
-                placeholder="https://www.youtube.com/watch?v=... or https://www.loom.com/share/...",
-                key="url_input"
-            )
-            st.info("💡 **Note:** YouTube downloads may be blocked. Try file upload for better reliability.")
-        
-        with tab2:
             st.markdown("**Upload video file directly:**")
             uploaded_file = st.file_uploader(
                 "Choose a video file",
@@ -223,7 +232,17 @@ def main():
             )
             if uploaded_file:
                 st.success(f"✅ File uploaded: {uploaded_file.name} ({uploaded_file.size / 1024 / 1024:.1f} MB)")
-                st.info("💡 **Tip:** File upload is more reliable than URL downloads!")
+                st.info("💡 **Tip:** File upload is 100% reliable and bypasses all platform restrictions!")
+        
+        with tab2:
+            st.markdown("**Enter video URL:**")
+            video_url = st.text_input(
+                "Video URL (YouTube, Loom, or direct MP4):",
+                placeholder="https://www.youtube.com/watch?v=... or https://www.loom.com/share/...",
+                key="url_input"
+            )
+            st.warning("⚠️ **Note:** YouTube downloads are often blocked. Use file upload for guaranteed success!")
+            st.info("💡 **Alternative:** Download the video locally, then upload it here.")
         
         # OpenAI API Key input
         openai_api_key = st.text_input("Enter your OpenAI API key:", type="password", help="Required for GPT-4 accent analysis")
@@ -370,12 +389,20 @@ def main():
                 st.error(f"❌ Error during analysis: {error_msg}")
                 st.markdown(f"""
                 <div class="error-box">
-                    <strong>Troubleshooting:</strong><br>
-                    • Check that the URL is valid and accessible<br>
-                    • Ensure the video contains clear English speech<br>
-                    • Verify your OpenAI API key<br>
-                    • Try a different video or shorter clip<br>
-                    <br>
+                    <strong>🚨 YouTube Download Blocked!</strong><br>
+                    YouTube is blocking downloads from cloud servers. Here's how to fix it:<br><br>
+                    
+                    <strong>✅ Recommended Solution:</strong><br>
+                    1. Download the video to your computer (using browser or YouTube app)<br>
+                    2. Go to the <strong>"📁 Upload File"</strong> tab above<br>
+                    3. Upload the video file directly<br>
+                    4. Get instant analysis without any restrictions!<br><br>
+                    
+                    <strong>Why this happens:</strong><br>
+                    • YouTube blocks automated downloads from cloud servers<br>
+                    • This is a common issue with all video analysis tools<br>
+                    • File upload bypasses all platform restrictions<br><br>
+                    
                     <strong>Request ID:</strong> {request_id}
                 </div>
                 """, unsafe_allow_html=True)
