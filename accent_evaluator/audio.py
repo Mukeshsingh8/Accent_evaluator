@@ -51,14 +51,10 @@ def extract_audio_from_video(url: str) -> Tuple[str, str]:
             if not is_accessible:
                 raise Exception("YouTube is not accessible. Please try file upload instead.")
         
-        # Single yt-dlp configuration
+        # Single yt-dlp configuration - download video first, extract audio separately
         ydl_opts = {
-            'format': 'bestaudio/best',
+            'format': 'best[height<=720]/best',  # Download best quality video
             'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'wav',
-            }],
             'quiet': True,
             'no_warnings': True,
             'http_headers': {
@@ -131,14 +127,45 @@ def extract_audio_from_video(url: str) -> Tuple[str, str]:
                 logger.error(f"[{request_id}] Duration validation failed: {duration_error}")
                 raise ValueError(duration_error)
             
+            # Find the downloaded video file
+            video_file = None
+            for file in os.listdir(temp_dir):
+                if not file.endswith('.wav'):  # Skip any existing wav files
+                    video_file = os.path.join(temp_dir, file)
+                    break
+            
+            if not video_file:
+                raise Exception("No video file found after download")
+            
+            logger.info(f"[{request_id}] Video downloaded: {video_file}")
+            
+            # Extract audio using FFmpeg
             title = sanitize_filename(info.get('title', 'video'))
             audio_file = os.path.join(temp_dir, f"{title}.wav")
+            
+            import subprocess
+            cmd = [
+                'ffmpeg', '-i', video_file,
+                '-vn',  # No video
+                '-acodec', 'pcm_s16le',  # PCM 16-bit
+                '-ar', '16000',  # Sample rate
+                '-ac', '1',  # Mono
+                '-y',  # Overwrite output
+                audio_file
+            ]
+            
+            logger.info(f"[{request_id}] Extracting audio with FFmpeg...")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            
+            if result.returncode != 0:
+                logger.error(f"[{request_id}] FFmpeg failed: {result.stderr}")
+                raise Exception(f"Failed to extract audio: {result.stderr}")
             
             if os.path.exists(audio_file):
                 logger.info(f"[{request_id}] Audio extraction completed in {time.time() - start_time:.2f}s")
                 return audio_file, request_id
             
-            # Try to find the wav file
+            # Try to find the wav file if the expected name doesn't exist
             for file in os.listdir(temp_dir):
                 if file.endswith('.wav'):
                     audio_file = os.path.join(temp_dir, file)
